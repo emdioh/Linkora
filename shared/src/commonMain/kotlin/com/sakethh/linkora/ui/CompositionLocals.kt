@@ -25,3 +25,11 @@ val LocalizedStrings =
     compositionLocalOf<LocalizedStrings> {
         error("LocalizedStrings isn't provided")
     }
+
+/**
+ * Lets any screen trigger a manual push/pull with the configured sync server. `null` when no host
+ * (e.g. share-to-save) provides it, in which case sync UI is hidden.
+ */
+data class ForceSyncController(val isSyncing: Boolean, val forceSync: () -> Unit)
+
+val LocalForceSyncController = compositionLocalOf<ForceSyncController?> { null }

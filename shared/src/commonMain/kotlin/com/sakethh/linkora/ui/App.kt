@@ -45,6 +45,7 @@ import androidx.compose.material3.pulltorefresh.pullToRefresh
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -383,31 +384,48 @@ fun App(modifier: Modifier = Modifier) {
                         Modifier
                     },
             ) {
-                LinkoraNavHost(
-                    startDestination = appVM.startDestination,
-                    onOnboardingComplete = appVM::markOnboardingComplete,
-                    forceSearchActive = forceSearchActive,
-                    cancelForceSearchActive = {
-                        forceSearchActive = false
-                    },
-                    preferences = preferences,
-                    collectionScreenParams =
-                        CollectionScreenParams(
-                            collectionPagerState = collectionsScreenVM.collectionPagerState,
-                            rootRegularFolders = collectionsScreenVM.rootRegularFolders,
-                            allTags = collectionsScreenVM.allTags,
-                            currentCollectionSource = collectionsScreenVM.currentCollectionSource,
-                            performAction = collectionsScreenVM::performAction,
-                            onRetrieveNextRegularRootFolderPage =
-                                collectionsScreenVM::retrieveNextBatchOfRegularRootFolders,
-                            onRegularRootFolderFirstVisibleItemIndexChange =
-                                collectionsScreenVM::
-                                    updateStartingIndexForRegularRootFoldersPaginator,
-                            onRetrieveNextTagsPage = collectionsScreenVM::retrieveNextBatchOfTags,
-                            onTagsFirstVisibleItemIndexChange =
-                                collectionsScreenVM::updateStartingIndexForTagsPaginator,
+                CompositionLocalProvider(
+                    LocalForceSyncController provides
+                        ForceSyncController(
+                            isSyncing = isPerformingDataSync || isDataSyncingFromPullRefresh.value,
+                            forceSync = {
+                                appVM.forceSync(
+                                    onStart = {
+                                        isDataSyncingFromPullRefresh.value = true
+                                    },
+                                    onCompletion = {
+                                        isDataSyncingFromPullRefresh.value = false
+                                    },
+                                )
+                            },
                         ),
-                )
+                ) {
+                    LinkoraNavHost(
+                        startDestination = appVM.startDestination,
+                        onOnboardingComplete = appVM::markOnboardingComplete,
+                        forceSearchActive = forceSearchActive,
+                        cancelForceSearchActive = {
+                            forceSearchActive = false
+                        },
+                        preferences = preferences,
+                        collectionScreenParams =
+                            CollectionScreenParams(
+                                collectionPagerState = collectionsScreenVM.collectionPagerState,
+                                rootRegularFolders = collectionsScreenVM.rootRegularFolders,
+                                allTags = collectionsScreenVM.allTags,
+                                currentCollectionSource = collectionsScreenVM.currentCollectionSource,
+                                performAction = collectionsScreenVM::performAction,
+                                onRetrieveNextRegularRootFolderPage =
+                                    collectionsScreenVM::retrieveNextBatchOfRegularRootFolders,
+                                onRegularRootFolderFirstVisibleItemIndexChange =
+                                    collectionsScreenVM::
+                                        updateStartingIndexForRegularRootFoldersPaginator,
+                                onRetrieveNextTagsPage = collectionsScreenVM::retrieveNextBatchOfTags,
+                                onTagsFirstVisibleItemIndexChange =
+                                    collectionsScreenVM::updateStartingIndexForTagsPaginator,
+                            ),
+                    )
+                }
                 if (preferences.isServerConfigured()) {
                     Indicator(
                         state = pullToRefreshState,
