@@ -101,7 +101,6 @@ import com.sakethh.linkora.ui.LocalNavController
 import com.sakethh.linkora.ui.LocalPlatform
 import com.sakethh.linkora.ui.LocalizedStrings
 import com.sakethh.linkora.ui.components.folder.FolderComponent
-import com.sakethh.linkora.ui.components.ForceSyncIconButton
 import com.sakethh.linkora.ui.components.sorting.SortingIconButton
 import com.sakethh.linkora.ui.domain.CurrentFABContext
 import com.sakethh.linkora.ui.domain.model.CollectionDetailPaneInfo
@@ -475,7 +474,6 @@ fun CollectionsScreen(
                                 }
                         }
                         Row {
-                            ForceSyncIconButton(preferences = preferences)
                             SortingIconButton()
                             if (onAndroidMobile) {
                                 Spacer(modifier = Modifier.width(5.dp))

@@ -61,7 +61,6 @@ import com.sakethh.linkora.ui.LocalFabController
 import com.sakethh.linkora.ui.LocalNavController
 import com.sakethh.linkora.ui.LocalizedStrings
 import com.sakethh.linkora.ui.components.CollectionLayoutManager
-import com.sakethh.linkora.ui.components.ForceSyncIconButton
 import com.sakethh.linkora.ui.components.sorting.SortingIconButton
 import com.sakethh.linkora.ui.domain.CurrentFABContext
 import com.sakethh.linkora.ui.domain.ScreenType
@@ -137,7 +136,6 @@ fun HomeScreen() {
                         ) {
                             Icon(imageVector = Icons.Default.Tune, contentDescription = null)
                         }
-                        ForceSyncIconButton(preferences = preferences)
                         SortingIconButton()
                     }
                 }
