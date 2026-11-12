@@ -94,6 +94,7 @@ object LinkoraViewModelFactory : ViewModelProvider.Factory {
                     permissionManager = LinkoraSDK.getInstance().permissionManager,
                     network = LinkoraSDK.getInstance().network,
                     localizationRepo = DependencyContainer.localizationRepo,
+                    remoteSyncRepo = DependencyContainer.remoteSyncRepo,
                 )
 
             DataSettingsScreenVM::class ->

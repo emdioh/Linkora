@@ -5,11 +5,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sakethh.linkora.domain.AppPreferences
+import com.sakethh.linkora.domain.Result
 import com.sakethh.linkora.domain.SaveServerConnectionAndSyncUseCase
 import com.sakethh.linkora.domain.model.ServerConnection
 import com.sakethh.linkora.domain.repository.LocalizationRepo
 import com.sakethh.linkora.domain.repository.NetworkRepo
 import com.sakethh.linkora.domain.repository.local.PreferencesRepository
+import com.sakethh.linkora.domain.repository.remote.RemoteSyncRepo
 import com.sakethh.linkora.domain.repository.remote.SyncSessionService
 import com.sakethh.linkora.platform.FileManager
 import com.sakethh.linkora.platform.Network
@@ -32,6 +34,7 @@ open class ServerManagementViewModel(
     private val permissionManager: PermissionManager,
     private val network: Network,
     private val localizationRepo: LocalizationRepo.Local,
+    private val remoteSyncRepo: RemoteSyncRepo,
 ) : ViewModel() {
     val preferencesAsFlow = preferencesRepository.currentPreferencesStateAsFlow
     val localizedStrings
@@ -173,6 +176,68 @@ open class ServerManagementViewModel(
                     finalInvocation()
                     it.pushSnackbar(this)
                 }
+        }
+    }
+
+    private var forceFullResyncJob: Job? = null
+
+    fun cancelForceFullResync() {
+        forceFullResyncJob?.cancel()
+    }
+
+    /**
+     * Sends every local link to the server regardless of its sync status. Progress is reported to
+     * [dataSyncLogs].
+     */
+    fun forceFullResync(onStart: () -> Unit, onCompletion: () -> Unit) {
+        if (syncSessionService.isBatchSyncRunning.value || forceFullResyncJob?.isActive == true) {
+            viewModelScope.launch {
+                pushUIEvent(UIEvent.Type.ShowSnackbar(localizedStrings.SyncAlreadyInProgress))
+            }
+            return
+        }
+        AppVM.pauseSnapshots = true
+        dataSyncLogs.clear()
+        forceFullResyncJob = viewModelScope.launch {
+            onStart()
+            var hadFailure = false
+            try {
+                runSuspendCatching {
+                    network.configureSyncServerClient(
+                        bypassCertCheck =
+                            preferencesRepository.getCurrentPreferencesState().skipCertCheckForSync,
+                    )
+                    remoteSyncRepo.forcePushAllLinksToServer().collect { result ->
+                        when (result) {
+                            is Result.Loading -> dataSyncLogs.add(result.message)
+                            is Result.Failure -> {
+                                hadFailure = true
+                                result.e.printStackTrace()
+                                dataSyncLogs.add(result.e.message.toString())
+                            }
+
+                            is Result.Success -> Unit
+                        }
+                    }
+                }
+                    .onSuccess {
+                        pushUIEvent(
+                            UIEvent.Type.ShowSnackbar(
+                                if (hadFailure) localizedStrings.FullResyncHadFailures
+                                else localizedStrings.FullResyncCompletedSuccessfully,
+                            ),
+                        )
+                    }
+                    .onFailure {
+                        it.printStackTrace()
+                        it.pushSnackbar(this)
+                    }
+            } finally {
+                AppVM.pauseSnapshots = false
+                AppVM.forceSnapshot()
+                dataSyncLogs.clear()
+                onCompletion()
+            }
         }
     }
 

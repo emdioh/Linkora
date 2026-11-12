@@ -4,10 +4,12 @@ import com.sakethh.linkora.data.local.dao.FoldersDao
 import com.sakethh.linkora.data.local.dao.LinksDao
 import com.sakethh.linkora.data.local.dao.TagsDao
 import com.sakethh.linkora.domain.AppPreferences
+import com.sakethh.linkora.domain.LinkType
 import com.sakethh.linkora.domain.Result
 import com.sakethh.linkora.domain.SyncServerRoute
 import com.sakethh.linkora.domain.asAddFolderDTO
 import com.sakethh.linkora.domain.asAddLinkDTO
+import com.sakethh.linkora.domain.asLinkDTO
 import com.sakethh.linkora.domain.dto.server.Correlation
 import com.sakethh.linkora.domain.dto.server.DeleteEverythingDTO
 import com.sakethh.linkora.domain.dto.server.ServerDataDTO
@@ -17,6 +19,7 @@ import com.sakethh.linkora.domain.dto.server.panel.AddANewPanelDTO
 import com.sakethh.linkora.domain.dto.server.panel.AddANewPanelFolderDTO
 import com.sakethh.linkora.domain.dto.server.panel.UpdatePanelNameDTO
 import com.sakethh.linkora.domain.dto.server.tag.CreateTagDTO
+import com.sakethh.linkora.domain.dto.server.tag.LinkTagDTO
 import com.sakethh.linkora.domain.model.Folder
 import com.sakethh.linkora.domain.model.PendingSyncQueue
 import com.sakethh.linkora.domain.model.WebSocketEvent
@@ -42,6 +45,7 @@ import com.sakethh.linkora.utils.Constants
 import com.sakethh.linkora.utils.Utils.json
 import com.sakethh.linkora.utils.canPushToServer
 import com.sakethh.linkora.utils.catchAsThrowableAndEmitFailure
+import com.sakethh.linkora.utils.getSystemEpochSeconds
 import com.sakethh.linkora.utils.performLocalOperationWithRemoteSyncFlow
 import com.sakethh.linkora.utils.postFlow
 import com.sakethh.linkora.utils.updateLastSyncedWithServerTimeStamp
@@ -53,6 +57,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import io.ktor.http.isSuccess
 import io.ktor.websocket.Frame
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.async
@@ -75,12 +80,12 @@ class RemoteSyncRepoImpl(
     private val websocketScheme: () -> String,
     private val pendingSyncQueueRepo: PendingSyncQueueRepo,
     remoteFoldersRepo: RemoteFoldersRepo,
-    remoteLinksRepo: RemoteLinksRepo,
+    private val remoteLinksRepo: RemoteLinksRepo,
     remotePanelsRepo: RemotePanelsRepo,
     private val preferencesRepository: PreferencesRepository,
     localMultiActionRepo: LocalMultiActionRepo,
     remoteMultiActionRepo: RemoteMultiActionRepo,
-    linksDao: LinksDao,
+    private val linksDao: LinksDao,
     foldersDao: FoldersDao,
     localTagsRepo: LocalTagsRepo,
     remoteTagsRepo: RemoteTagsRepo,
@@ -602,6 +607,136 @@ class RemoteSyncRepoImpl(
 
         send(Result.Loading(message = "[SYNC] Pushing queued items to server"))
         pushPendingSyncQueueToServer().collect()
+    }
+
+    override fun forcePushAllLinksToServer(): Flow<Result<Unit>> = channelFlow {
+        send(Result.Loading(message = "[FULL RESYNC] Fetching the list of links on the server"))
+        // GET_UPDATES with a timestamp before any possible edit returns everything the server has.
+        // The server's UPDATE_LINK silently succeeds for unknown ids, so this is the only reliable
+        // way to tell which "synced" links the server no longer has.
+        val remoteLinkIds =
+            network
+                .getSyncServerClient()
+                .get(baseUrl() + SyncServerRoute.GET_UPDATES.name) {
+                    bearerAuth(authToken())
+                    contentType(ContentType.Application.Json)
+                    parameter("eventTimestamp", -1L)
+                }
+                .also {
+                    check(it.status.isSuccess()) {
+                        "Failed to fetch links from the server: ${it.status}"
+                    }
+                }
+                .body<ServerDataDTO>()
+                .links
+                .map { it.id }
+                .toSet()
+        send(Result.Loading(message = "[FULL RESYNC] Server has ${remoteLinkIds.size} links"))
+
+        val missingOnServer =
+            linksDao.getAllLinks().filter { it.remoteId != null && it.remoteId !in remoteLinkIds }
+        missingOnServer.forEach { link ->
+            linksDao.updateALink(link.copy(remoteId = null))
+        }
+        send(
+            Result.Loading(
+                message =
+                    "[FULL RESYNC] ${missingOnServer.size} links are missing on the server and will be re-created",
+            ),
+        )
+
+        // Creates everything without a remote id (including the links reset above) and flushes
+        // the pending queue.
+        pushNonSyncedDataToServer()
+
+        val correlation = preferencesRepository.getCurrentPreferencesState().correlation
+        val linksToOverwrite =
+            linksDao.getAllLinks().filter { it.remoteId != null && it.remoteId in remoteLinkIds }
+        send(
+            Result.Loading(
+                message =
+                    "[FULL RESYNC] Overwriting ${linksToOverwrite.size} links on the server",
+            ),
+        )
+        var overwritten = 0
+        var failed = 0
+        linksToOverwrite.forEach { link ->
+            val remoteId = link.remoteId ?: return@forEach
+            val remoteFolderId =
+                if (link.linkType == LinkType.FOLDER_LINK && link.idOfLinkedFolder != null) {
+                    localFoldersRepo.getRemoteIdOfAFolder(link.idOfLinkedFolder)
+                        ?: run {
+                            failed++
+                            send(
+                                Result.Failure(
+                                    IllegalStateException(
+                                        "[FULL RESYNC] Skipped link (ID: ${link.localId}): its folder isn't on the server",
+                                    ),
+                                ),
+                            )
+                            return@forEach
+                        }
+                } else {
+                    link.idOfLinkedFolder
+                }
+            val remoteLinkTags =
+                tagsDao.getTags(link.localId).mapNotNull { tag ->
+                    tag.remoteId?.let { LinkTagDTO(linkId = remoteId, tagId = it) }
+                }
+            remoteLinksRepo
+                .updateLink(
+                    link
+                        .asLinkDTO(
+                            id = remoteId,
+                            remoteLinkTags = remoteLinkTags,
+                            correlation = correlation,
+                        )
+                        // a fresh timestamp makes the local copy win the server's LWW check
+                        .copy(
+                            idOfLinkedFolder = remoteFolderId,
+                            eventTimestamp = getSystemEpochSeconds(),
+                        ),
+                )
+                .collect { result ->
+                    when (result) {
+                        is Result.Success -> {
+                            overwritten++
+                            linksDao.updateLinkTimestamp(
+                                timestamp = result.data.eventTimestamp,
+                                localLinkId = link.localId,
+                            )
+                            preferencesRepository.updateLastSyncedWithServerTimeStamp(
+                                result.data.eventTimestamp,
+                            )
+                        }
+
+                        is Result.Failure -> {
+                            failed++
+                            send(
+                                Result.Failure(
+                                    Throwable(
+                                        "[FULL RESYNC] Failed to overwrite link (ID: ${link.localId}): ${result.e.message}",
+                                        result.e,
+                                    ),
+                                ),
+                            )
+                        }
+
+                        is Result.Loading -> Unit
+                    }
+                }
+        }
+        send(
+            Result.Loading(
+                message =
+                    "[FULL RESYNC] Done. Overwritten: $overwritten, re-created: ${missingOnServer.size}, failed: $failed",
+            ),
+        )
+        if (failed == 0) {
+            send(Result.Success(Unit))
+        } else {
+            send(Result.Failure(IllegalStateException("$failed links could not be sent to the server")))
+        }
     }
 
     override suspend fun deleteEverything(deleteOnRemote: Boolean): Flow<Result<Unit>> =

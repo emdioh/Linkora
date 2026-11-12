@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.BackupTable
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.DataObject
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
@@ -113,6 +114,7 @@ import com.sakethh.linkora.ui.screens.settings.section.data.sync.ServerManagemen
 import com.sakethh.linkora.ui.utils.pressScaleEffect
 import com.sakethh.linkora.utils.addEdgeToEdgeScaffoldPadding
 import com.sakethh.linkora.utils.asLocalizedString
+import com.sakethh.linkora.utils.canPushToServer
 import com.sakethh.linkora.utils.currentSavedServerConfig
 import com.sakethh.linkora.utils.highlightOnFocused
 import com.sakethh.linkora.utils.isServerConfigured
@@ -132,6 +134,12 @@ fun DataSettingsScreen() {
         mutableStateOf(false)
     }
     var isForcePushAndPullProgressUIVisible by rememberSaveable {
+        mutableStateOf(false)
+    }
+    var isForceFullResyncProgressUIVisible by rememberSaveable {
+        mutableStateOf(false)
+    }
+    var showForceFullResyncConfirmation by rememberSaveable {
         mutableStateOf(false)
     }
     val shouldDeleteEntireDialogBoxAppear = rememberSaveable { mutableStateOf(false) }
@@ -604,6 +612,26 @@ fun DataSettingsScreen() {
                                 )
                             },
                             icon = Icons.Default.Sync,
+                            shouldFilledIconBeUsed = true,
+                        ),
+                    )
+                }
+            }
+
+            if (preferences.canPushToServer()) {
+                item {
+                    SettingComponent(
+                        SettingComponentParam(
+                            isIconNeeded = true,
+                            title = localizedStrings.ForceFullResync,
+                            doesDescriptionExists = true,
+                            description = localizedStrings.ForceFullResyncDesc,
+                            isSwitchNeeded = false,
+                            isSwitchEnabled = preferences.useAmoledTheme,
+                            onSwitchStateChange = {
+                                showForceFullResyncConfirmation = true
+                            },
+                            icon = Icons.Default.CloudUpload,
                             shouldFilledIconBeUsed = true,
                         ),
                     )
@@ -1145,6 +1173,70 @@ fun DataSettingsScreen() {
         operationTitle = localizedStrings.SyncingDataLabel,
         operationDesc = localizedStrings.InitiateManualSyncDescAlt,
     )
+    LogsScreen(
+        isVisible = isForceFullResyncProgressUIVisible,
+        onCancel = {
+            serverManagementViewModel.cancelForceFullResync()
+            isForceFullResyncProgressUIVisible = false
+        },
+        logs = serverManagementViewModel.dataSyncLogs,
+        operationTitle = localizedStrings.ForceFullResync,
+        operationDesc = localizedStrings.ForceFullResyncDesc,
+    )
+    if (showForceFullResyncConfirmation) {
+        AlertDialog(
+            onDismissRequest = {
+                showForceFullResyncConfirmation = false
+            },
+            title = {
+                Text(
+                    text = localizedStrings.ForceFullResync,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontSize = 18.sp,
+                )
+            },
+            text = {
+                Text(
+                    text = localizedStrings.ForceFullResyncConfirmation,
+                    style = MaterialTheme.typography.titleSmall,
+                )
+            },
+            confirmButton = {
+                Button(
+                    modifier = Modifier.pointerHoverIcon(icon = PointerIcon.Hand).fillMaxWidth(),
+                    onClick = {
+                        showForceFullResyncConfirmation = false
+                        serverManagementViewModel.forceFullResync(
+                            onStart = {
+                                isForceFullResyncProgressUIVisible = true
+                            },
+                            onCompletion = {
+                                isForceFullResyncProgressUIVisible = false
+                            },
+                        )
+                    },
+                ) {
+                    Text(
+                        text = localizedStrings.Confirm,
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    modifier = Modifier.pointerHoverIcon(icon = PointerIcon.Hand).fillMaxWidth(),
+                    onClick = {
+                        showForceFullResyncConfirmation = false
+                    },
+                ) {
+                    Text(
+                        text = localizedStrings.Cancel,
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                }
+            },
+        )
+    }
     if (shouldDeleteEntireDialogBoxAppear.value) {
         DeleteAllDataDialog(
             preferences = preferences,

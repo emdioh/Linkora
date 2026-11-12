@@ -1572,6 +1572,30 @@
     "defaultValue": "Pending items will be pushed, and unsynced data from the server will be pulled."
   },
   {
+    "key": "ForceFullResync",
+    "defaultValue": "Force Full Resync"
+  },
+  {
+    "key": "ForceFullResyncDesc",
+    "defaultValue": "Sends every link on this device to the server, even ones already marked as synced. Links missing on the server are re-created; the rest are overwritten with this device's version."
+  },
+  {
+    "key": "ForceFullResyncConfirmation",
+    "defaultValue": "The server's copy of every link will be replaced with the version on this device. Link changes made on other devices that haven't synced here yet will be overwritten."
+  },
+  {
+    "key": "FullResyncCompletedSuccessfully",
+    "defaultValue": "Full resync completed successfully."
+  },
+  {
+    "key": "FullResyncHadFailures",
+    "defaultValue": "Full resync finished, but some links couldn't be sent to the server."
+  },
+  {
+    "key": "SyncAlreadyInProgress",
+    "defaultValue": "A sync is already in progress. Try again once it finishes."
+  },
+  {
     "key": "SyncingDataLabel",
     "defaultValue": "Syncing Data..."
   },

@@ -16,5 +16,13 @@ interface RemoteSyncRepo {
 
     suspend fun <T> SendChannel<Result<T>>.pushNonSyncedDataToServer()
 
+    /**
+     * Sends every local link to the server, regardless of its sync status:
+     * - links that were never synced are created (along with any other never-synced items),
+     * - links the app thinks are synced but that no longer exist on the server are re-created,
+     * - all other links are overwritten on the server with the local version.
+     */
+    fun forcePushAllLinksToServer(): Flow<Result<Unit>>
+
     suspend fun deleteEverything(deleteOnRemote: Boolean): Flow<Result<Unit>>
 }
