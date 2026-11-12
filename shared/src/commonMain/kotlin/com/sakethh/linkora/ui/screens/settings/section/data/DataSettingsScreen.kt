@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.BackupTable
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.DataObject
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
@@ -630,7 +631,7 @@ fun DataSettingsScreen() {
                             onSwitchStateChange = {
                                 showForceFullResyncConfirmation = true
                             },
-                            icon = Icons.Default.CloudSync,
+                            icon = Icons.Default.CloudUpload,
                             shouldFilledIconBeUsed = true,
                         ),
                     )
